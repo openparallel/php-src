@@ -62,7 +62,6 @@ typedef struct _znode {
 
 		int var;
 		int opline_num;
-		int fetch_type;
 		zend_op_array *op_array;
 		struct {
 			int var;	/* dummy */

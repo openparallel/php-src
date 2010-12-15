@@ -32,9 +32,10 @@ extern zend_module_entry tbb_module_entry;
 #	define PHP_TBB_API
 #endif
 
-#ifdef ZTS
-#include "TSRM.h"
+#ifndef ZTS
+#error PHP must be built with ZTS for the tbb extension to work.
 #endif
+#include "TSRM.h"
 
 PHP_MINIT_FUNCTION(tbb);
 PHP_MSHUTDOWN_FUNCTION(tbb);

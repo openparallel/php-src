@@ -8,14 +8,12 @@ dnl without editing.
 dnl If your extension references something external, use with:
 
 dnl PHP_ARG_WITH(tbb, for tbb support,
-dnl Make sure that the comment is aligned:
 dnl [  --with-tbb             Include tbb support])
 
 dnl Otherwise use enable:
 
-dnl PHP_ARG_ENABLE(tbb, whether to enable tbb support,
-dnl Make sure that the comment is aligned:
-dnl [  --enable-tbb           Enable tbb support])
+PHP_ARG_ENABLE(tbb, whether to enable tbb support,
+[  --enable-tbb           Enable tbb support])
 
 if test "$PHP_TBB" != "no"; then
   dnl Write more examples of tests here...

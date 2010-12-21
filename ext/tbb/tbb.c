@@ -41,9 +41,10 @@ static int le_tbb;
  * Every user visible function must have an entry in tbb_functions[].
  */
 const zend_function_entry tbb_functions[] = {
-	PHP_FE(confirm_tbb_compiled,	NULL)		/* For testing, remove later. */
-    PHP_FE(parallel_map, NULL)
+    PHP_FE(confirm_tbb_compiled,	NULL)		/* For testing, remove later. */
     PHP_FE(tbb_new_interp, NULL)
+    PHP_FE(tbb_array_filter_ctx_test, NULL)
+    PHP_FE(parallel_map, NULL)
 	{NULL, NULL, NULL}	/* Must be the last line in tbb_functions[] */
 };
 /* }}} */
@@ -203,8 +204,7 @@ PHP_FUNCTION(tbb_new_interp)
     RETVAL_NULL();
 }
 
-/* Right now this is just a result of looking at some example code and pulling
-in some stuff from array_map, so right now it isn't working, ZANE */
+/* test function */
 PHP_FUNCTION(parallel_map)
 {
     zval *array = NULL;
@@ -255,6 +255,86 @@ PHP_FUNCTION(parallel_map)
 
 error_out:
 	efree(params);
+}
+
+PHP_FUNCTION(tbb_array_filter_ctx_test)
+{
+	void* newinterp; // New Interpreter Context
+	void* curctx; // Current Interpreter Context
+
+	zval *array;
+	zval **operand;
+	zval **args[1];
+	zval *retval = NULL;
+	zend_bool have_callback = 0;
+	char *string_key;
+	zend_fcall_info fci = empty_fcall_info;
+	zend_fcall_info_cache fci_cache = empty_fcall_info_cache;
+	uint string_key_len;
+	ulong num_key;
+	HashPosition pos;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "af", &array, &fci, &fci_cache) == FAILURE) {
+		return;
+	}
+
+	// Create a new interpreter context
+	newinterp = tsrm_new_interpreter_context();
+
+	// Set the new interpreter context and save the old one
+	curctx = tsrm_set_interpreter_context(newinterp);
+
+	// Initialize executor for new interpreter context?
+	init_executor(newinterp);
+
+	// At this point, are we effectively executing in the new interpreter context?
+	// - Zane
+
+	array_init(return_value);
+	if (zend_hash_num_elements(Z_ARRVAL_P(array)) == 0) {
+		return;
+	}
+
+	fci.no_separation = 0;
+	fci.retval_ptr_ptr = &retval;
+	fci.param_count = 1;
+
+	for (zend_hash_internal_pointer_reset_ex(Z_ARRVAL_P(array), &pos);
+		zend_hash_get_current_data_ex(Z_ARRVAL_P(array), (void **)&operand, &pos) == SUCCESS;
+		zend_hash_move_forward_ex(Z_ARRVAL_P(array), &pos)
+	) {
+		args[0] = operand;
+		fci.params = args;
+
+		if (zend_call_function(&fci, &fci_cache TSRMLS_CC) == SUCCESS && retval) {
+			if (!zend_is_true(retval)) {
+				zval_ptr_dtor(&retval);
+				continue;
+			} else {
+				zval_ptr_dtor(&retval);
+			}
+		} else {
+			php_error_docref(NULL TSRMLS_CC, E_WARNING, "An error occurred while invoking the filter callback");
+			return;
+		}
+
+		zval_add_ref(operand);
+		switch (zend_hash_get_current_key_ex(Z_ARRVAL_P(array), &string_key, &string_key_len, &num_key, 0, &pos)) {
+			case HASH_KEY_IS_STRING:
+				zend_hash_update(Z_ARRVAL_P(return_value), string_key, string_key_len, operand, sizeof(zval *), NULL);
+				break;
+
+			case HASH_KEY_IS_LONG:
+				zend_hash_index_update(Z_ARRVAL_P(return_value), num_key, operand, sizeof(zval *), NULL);
+				break;
+		}
+	}
+
+	// Restore old interpreter context
+	tsrm_set_interpreter_context(curctx);
+
+	// Not safe?
+	//tsrm_free_interpreter_context(newinterp);
 }
 
 /*

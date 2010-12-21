@@ -27,6 +27,8 @@
 #include "ext/standard/info.h"
 #include "php_tbb.h"
 
+#include "Zend/zend_execute.h"
+
 /* If you declare any globals in php_tbb.h uncomment this:
 ZEND_DECLARE_MODULE_GLOBALS(tbb)
 */
@@ -41,6 +43,7 @@ static int le_tbb;
 const zend_function_entry tbb_functions[] = {
 	PHP_FE(confirm_tbb_compiled,	NULL)		/* For testing, remove later. */
     PHP_FE(parallel_map, NULL)
+    PHP_FE(tbb_new_interp, NULL)
 	{NULL, NULL, NULL}	/* Must be the last line in tbb_functions[] */
 };
 /* }}} */
@@ -172,6 +175,33 @@ PHP_FUNCTION(confirm_tbb_compiled)
    follow this convention for the convenience of others editing your code.
 */
 
+/* create a new interpreter object, it won't run, we just want to time it. */
+#include <sys/time.h>
+#include <stdio.h>
+PHP_FUNCTION(tbb_new_interp)
+{
+	/* TSRMLS_FETCH(); */
+
+	void* newinterp;
+	void* curctx;
+	struct timeval tv_s, tv_e;
+	struct timezone tz;
+	int elapsed;
+
+	gettimeofday(&tv_s, &tz);
+	newinterp = tsrm_new_interpreter_context();
+	curctx = tsrm_set_interpreter_context(newinterp);
+	init_executor(newinterp);
+	gettimeofday(&tv_e, &tz);
+
+	elapsed = (tv_e.tv_sec - tv_s.tv_sec) * 1000000 +
+		(tv_e.tv_usec - tv_s.tv_usec);
+	fprintf(stderr, "new interpreter functions took %d us\n", elapsed);
+
+	tsrm_set_interpreter_context(curctx);
+
+    RETVAL_NULL();
+}
 
 /* Right now this is just a result of looking at some example code and pulling
 in some stuff from array_map, so right now it isn't working, ZANE */

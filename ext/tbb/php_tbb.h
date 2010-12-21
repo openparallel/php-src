@@ -45,6 +45,7 @@ PHP_MINFO_FUNCTION(tbb);
 
 PHP_FUNCTION(confirm_tbb_compiled);	/* For testing, remove later. */
 PHP_FUNCTION(parallel_map);
+PHP_FUNCTION(tbb_new_interp);
 
 /* 
   	Declare any global variables you may need between the BEGIN

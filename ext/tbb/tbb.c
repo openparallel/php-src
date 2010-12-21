@@ -210,36 +210,52 @@ PHP_FUNCTION(parallel_map)
     zval *array = NULL;
     zval ***params = NULL;
     zval *result = NULL;
+	HashPosition array_pos;
 
     zend_fcall_info fci = empty_fcall_info;
     zend_fcall_info_cache fci_cache = empty_fcall_info_cache;
 
     long grainsize = 0;
+    unsigned int items = 0;
+	int k;
 
     if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "fa|l", &fci, &fci_cache, &array, &grainsize) == FAILURE) {
         return;
     }
 
-    RETVAL_NULL();
+	items = zend_hash_num_elements(Z_ARRVAL(*array));
+	array_init_size(return_value, items);
+	zend_hash_internal_pointer_reset_ex(Z_ARRVAL(*array), &array_pos);
+	params = (zval ***)safe_emalloc(1, sizeof(zval **), 0);
 
-    if (!ZEND_FCI_INITIALIZED(fci)) {
-        MAKE_STD_ZVAL(result);
-    }
+	for (k = 0; k < items; k++) {
+		uint str_key_len;
+		ulong num_key;
+		char *str_key;
+		int key_type = 0;
 
-    if (ZEND_FCI_INITIALIZED(fci)) {
-        fci.retval_ptr_ptr = &result;
-        fci.param_count = 0;
-        fci.params = params;
-        fci.no_separation = 0;
+		MAKE_STD_ZVAL(result);
+		fci.retval_ptr_ptr = &result;
+		fci.param_count = 1;
+		fci.params = params;
+		fci.no_separation = 0;
 
-        if (zend_call_function(&fci, &fci_cache TSRMLS_CC) != SUCCESS || !result) {
-            php_error_docref(NULL TSRMLS_CC, E_WARNING, "An error occurred while invoking the parallel_map callback");
-            //efree(params);
-            RETURN_NULL();
-        }
-    }
+		zend_hash_get_current_data_ex( NULL, (void**)&params[0], &array_pos );
+		zend_hash_move_forward_ex( NULL, &array_pos );
+
+		if (zend_call_function(&fci, &fci_cache TSRMLS_CC) != SUCCESS || !result) {
+				php_error_docref(NULL TSRMLS_CC, E_WARNING, "An error occurred while invoking the parallel_map callback");
+				zval_dtor(return_value);
+				RETVAL_NULL();
+				goto error_out;
+		}
+
+		add_next_index_zval(return_value, result);
+	}
+
+error_out:
+	efree(params);
 }
-
 
 /*
  * Local variables:

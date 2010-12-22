@@ -219,6 +219,9 @@ PHP_FUNCTION(parallel_map)
     unsigned int items = 0;
 	int k;
 
+	void* newinterp; // New Interpreter Context
+	void* curctx; // Current Interpreter Context
+
     if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "fa|l", &fci, &fci_cache, &array, &grainsize) == FAILURE) {
         return;
     }
@@ -227,6 +230,17 @@ PHP_FUNCTION(parallel_map)
 	array_init_size(return_value, items);
 	zend_hash_internal_pointer_reset_ex(Z_ARRVAL(*array), &array_pos);
 	params = (zval ***)safe_emalloc(1, sizeof(zval **), 0);
+
+	// Create a new interpreter context
+	newinterp = tsrm_new_interpreter_context();
+
+	// Set the new interpreter context and save the old one
+	curctx = tsrm_set_interpreter_context(newinterp);
+
+	// Initialize executor for new interpreter context (update the
+	// value in TLS; the 'tsrm_ls' variable in this scope, which
+	// TSRMLS_CC expands to, will still be the old value)
+	init_executor(newinterp);
 
 	for (k = 0; k < items; k++) {
 		uint str_key_len;
@@ -243,7 +257,8 @@ PHP_FUNCTION(parallel_map)
 		zend_hash_get_current_data_ex( NULL, (void**)&params[0], &array_pos );
 		zend_hash_move_forward_ex( NULL, &array_pos );
 
-		if (zend_call_function(&fci, &fci_cache TSRMLS_CC) != SUCCESS || !result) {
+		/* ideally we want to be able to use 'newinterp' below, not 'curctx' */
+		if (zend_call_function(&fci, &fci_cache, curctx ) != SUCCESS || !result) {
 				php_error_docref(NULL TSRMLS_CC, E_WARNING, "An error occurred while invoking the parallel_map callback");
 				zval_dtor(return_value);
 				RETVAL_NULL();
@@ -254,6 +269,7 @@ PHP_FUNCTION(parallel_map)
 	}
 
 error_out:
+	tsrm_set_interpreter_context(curctx);
 	efree(params);
 }
 

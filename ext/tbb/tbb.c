@@ -284,11 +284,10 @@ PHP_FUNCTION(tbb_array_filter_ctx_test)
 	// Set the new interpreter context and save the old one
 	curctx = tsrm_set_interpreter_context(newinterp);
 
-	// Initialize executor for new interpreter context?
+	// Initialize executor for new interpreter context (update the
+	// value in TLS; the 'tsrm_ls' variable in this scope, which
+	// TSRMLS_CC expands to, will still be the old value)
 	init_executor(newinterp);
-
-	// At this point, are we effectively executing in the new interpreter context?
-	// - Zane
 
 	array_init(return_value);
 	if (zend_hash_num_elements(Z_ARRVAL_P(array)) == 0) {
@@ -306,7 +305,8 @@ PHP_FUNCTION(tbb_array_filter_ctx_test)
 		args[0] = operand;
 		fci.params = args;
 
-		if (zend_call_function(&fci, &fci_cache TSRMLS_CC) == SUCCESS && retval) {
+		/* ideally we want to be able to use 'newinterp' below, not 'curctx' */
+		if (zend_call_function(&fci, &fci_cache, curctx) == SUCCESS && retval) {
 			if (!zend_is_true(retval)) {
 				zval_ptr_dtor(&retval);
 				continue;

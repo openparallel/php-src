@@ -29,6 +29,8 @@
 
 #include "Zend/zend_execute.h"
 
+// #include <tbb/tbb.h>
+
 /* If you declare any globals in php_tbb.h uncomment this:
 ZEND_DECLARE_MODULE_GLOBALS(tbb)
 */
@@ -41,10 +43,8 @@ static int le_tbb;
  * Every user visible function must have an entry in tbb_functions[].
  */
 const zend_function_entry tbb_functions[] = {
-    PHP_FE(confirm_tbb_compiled,	NULL)		/* For testing, remove later. */
-    PHP_FE(tbb_new_interp, NULL)
-    PHP_FE(tbb_array_filter_ctx_test, NULL)
     PHP_FE(parallel_map, NULL)
+	/* Coming Soon - PHP_FE(parallel_reduce, NULL) */
 	{NULL, NULL, NULL}	/* Must be the last line in tbb_functions[] */
 };
 /* }}} */
@@ -149,62 +149,9 @@ PHP_MINFO_FUNCTION(tbb)
 /* }}} */
 
 
-/* Remove the following function when you have succesfully modified config.m4
-   so that your module can be compiled into PHP, it exists only for testing
-   purposes. */
-
-/* Every user-visible function in PHP should document itself in the source */
-/* {{{ proto string confirm_tbb_compiled(string arg)
-   Return a string to confirm that the module is compiled in */
-PHP_FUNCTION(confirm_tbb_compiled)
-{
-	char *arg = NULL;
-	int arg_len, len;
-	char *strg;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s", &arg, &arg_len) == FAILURE) {
-		return;
-	}
-
-	len = spprintf(&strg, 0, "Congratulations! You have successfully modified ext/%.78s/config.m4. Module %.78s is now compiled into PHP.", "tbb", arg);
-	RETURN_STRINGL(strg, len, 0);
-}
-/* }}} */
-/* The previous line is meant for vim and emacs, so it can correctly fold and 
-   unfold functions in source code. See the corresponding marks just before 
-   function definition, where the functions purpose is also documented. Please 
-   follow this convention for the convenience of others editing your code.
-*/
-
-/* create a new interpreter object, it won't run, we just want to time it. */
-#include <sys/time.h>
-#include <stdio.h>
-PHP_FUNCTION(tbb_new_interp)
-{
-	/* TSRMLS_FETCH(); */
-
-	void* newinterp;
-	void* curctx;
-	struct timeval tv_s, tv_e;
-	struct timezone tz;
-	int elapsed;
-
-	gettimeofday(&tv_s, &tz);
-	newinterp = tsrm_new_interpreter_context();
-	curctx = tsrm_set_interpreter_context(newinterp);
-	init_executor(newinterp);
-	gettimeofday(&tv_e, &tz);
-
-	elapsed = (tv_e.tv_sec - tv_s.tv_sec) * 1000000 +
-		(tv_e.tv_usec - tv_s.tv_usec);
-	fprintf(stderr, "new interpreter functions took %d us\n", elapsed);
-
-	tsrm_set_interpreter_context(curctx);
-
-    RETVAL_NULL();
-}
-
-/* test function */
+/* {{{ proto array parallel_map(mixed callback, array arg [, int grainsize = 0])
+   Loop over an array, running the user supplied callback for each key.
+   Returns the modified array. */
 PHP_FUNCTION(parallel_map)
 {
     zval *array = NULL;
@@ -219,9 +166,6 @@ PHP_FUNCTION(parallel_map)
     unsigned int items = 0;
 	int k;
 
-	void* newinterp; // New Interpreter Context
-	void* curctx; // Current Interpreter Context
-
     if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "fa|l", &fci, &fci_cache, &array, &grainsize) == FAILURE) {
         return;
     }
@@ -230,17 +174,6 @@ PHP_FUNCTION(parallel_map)
 	array_init_size(return_value, items);
 	zend_hash_internal_pointer_reset_ex(Z_ARRVAL(*array), &array_pos);
 	params = (zval ***)safe_emalloc(1, sizeof(zval **), 0);
-
-	// Create a new interpreter context
-	newinterp = tsrm_new_interpreter_context();
-
-	// Set the new interpreter context and save the old one
-	curctx = tsrm_set_interpreter_context(newinterp);
-
-	// Initialize executor for new interpreter context (update the
-	// value in TLS; the 'tsrm_ls' variable in this scope, which
-	// TSRMLS_CC expands to, will still be the old value)
-	init_executor(newinterp);
 
 	for (k = 0; k < items; k++) {
 		uint str_key_len;
@@ -257,8 +190,7 @@ PHP_FUNCTION(parallel_map)
 		zend_hash_get_current_data_ex( NULL, (void**)&params[0], &array_pos );
 		zend_hash_move_forward_ex( NULL, &array_pos );
 
-		/* ideally we want to be able to use 'newinterp' below, not 'curctx' */
-		if (zend_call_function(&fci, &fci_cache, curctx ) != SUCCESS || !result) {
+		if (zend_call_function(&fci, &fci_cache TSRMLS_CC) != SUCCESS || !result) {
 				php_error_docref(NULL TSRMLS_CC, E_WARNING, "An error occurred while invoking the parallel_map callback");
 				zval_dtor(return_value);
 				RETVAL_NULL();
@@ -269,89 +201,9 @@ PHP_FUNCTION(parallel_map)
 	}
 
 error_out:
-	tsrm_set_interpreter_context(curctx);
 	efree(params);
 }
-
-PHP_FUNCTION(tbb_array_filter_ctx_test)
-{
-	void* newinterp; // New Interpreter Context
-	void* curctx; // Current Interpreter Context
-
-	zval *array;
-	zval **operand;
-	zval **args[1];
-	zval *retval = NULL;
-	zend_bool have_callback = 0;
-	char *string_key;
-	zend_fcall_info fci = empty_fcall_info;
-	zend_fcall_info_cache fci_cache = empty_fcall_info_cache;
-	uint string_key_len;
-	ulong num_key;
-	HashPosition pos;
-
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "af", &array, &fci, &fci_cache) == FAILURE) {
-		return;
-	}
-
-	// Create a new interpreter context
-	newinterp = tsrm_new_interpreter_context();
-
-	// Set the new interpreter context and save the old one
-	curctx = tsrm_set_interpreter_context(newinterp);
-
-	// Initialize executor for new interpreter context (update the
-	// value in TLS; the 'tsrm_ls' variable in this scope, which
-	// TSRMLS_CC expands to, will still be the old value)
-	init_executor(newinterp);
-
-	array_init(return_value);
-	if (zend_hash_num_elements(Z_ARRVAL_P(array)) == 0) {
-		return;
-	}
-
-	fci.no_separation = 0;
-	fci.retval_ptr_ptr = &retval;
-	fci.param_count = 1;
-
-	for (zend_hash_internal_pointer_reset_ex(Z_ARRVAL_P(array), &pos);
-		zend_hash_get_current_data_ex(Z_ARRVAL_P(array), (void **)&operand, &pos) == SUCCESS;
-		zend_hash_move_forward_ex(Z_ARRVAL_P(array), &pos)
-	) {
-		args[0] = operand;
-		fci.params = args;
-
-		/* ideally we want to be able to use 'newinterp' below, not 'curctx' */
-		if (zend_call_function(&fci, &fci_cache, curctx) == SUCCESS && retval) {
-			if (!zend_is_true(retval)) {
-				zval_ptr_dtor(&retval);
-				continue;
-			} else {
-				zval_ptr_dtor(&retval);
-			}
-		} else {
-			php_error_docref(NULL TSRMLS_CC, E_WARNING, "An error occurred while invoking the filter callback");
-			return;
-		}
-
-		zval_add_ref(operand);
-		switch (zend_hash_get_current_key_ex(Z_ARRVAL_P(array), &string_key, &string_key_len, &num_key, 0, &pos)) {
-			case HASH_KEY_IS_STRING:
-				zend_hash_update(Z_ARRVAL_P(return_value), string_key, string_key_len, operand, sizeof(zval *), NULL);
-				break;
-
-			case HASH_KEY_IS_LONG:
-				zend_hash_index_update(Z_ARRVAL_P(return_value), num_key, operand, sizeof(zval *), NULL);
-				break;
-		}
-	}
-
-	// Restore old interpreter context
-	tsrm_set_interpreter_context(curctx);
-
-	// Not safe?
-	//tsrm_free_interpreter_context(newinterp);
-}
+/* }}} */
 
 /*
  * Local variables:

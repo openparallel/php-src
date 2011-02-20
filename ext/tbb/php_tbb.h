@@ -32,10 +32,10 @@ extern zend_module_entry tbb_module_entry;
 #	define PHP_TBB_API
 #endif
 
-#ifndef ZTS
+/*#ifndef ZTS
 #error PHP must be built with ZTS for the tbb extension to work.
 #endif
-#include "TSRM.h"
+#include "TSRM.h"*/
 
 PHP_MINIT_FUNCTION(tbb);
 PHP_MSHUTDOWN_FUNCTION(tbb);
@@ -43,10 +43,8 @@ PHP_RINIT_FUNCTION(tbb);
 PHP_RSHUTDOWN_FUNCTION(tbb);
 PHP_MINFO_FUNCTION(tbb);
 
-PHP_FUNCTION(confirm_tbb_compiled);	/* For testing, remove later. */
-PHP_FUNCTION(tbb_new_interp); /* Benchmarking interpreter creation */
-PHP_FUNCTION(parallel_map); /* a target API function */
-PHP_FUNCTION(tbb_array_filter_ctx_test); /* Testing new interpreter contexts with code */
+PHP_FUNCTION(parallel_map);
+/* PHP_FUNCTION(parallel_reduce); */
 
 /* 
   	Declare any global variables you may need between the BEGIN

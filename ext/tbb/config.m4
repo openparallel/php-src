@@ -57,5 +57,6 @@ if test "$PHP_TBB" != "no"; then
   dnl
   dnl PHP_SUBST(TBB_SHARED_LIBADD)
 
+  dnl PHP_REQUIRE_CXX()
   PHP_NEW_EXTENSION(tbb, tbb.c, $ext_shared)
 fi
